@@ -21,7 +21,7 @@ using namespace cv;
  */
 void ofApp::setup() {
   // initialize camera
-	camera.initGrabber(640, 480);
+  camera.initGrabber(640, 480);
 }
 
 /**
@@ -33,10 +33,10 @@ void ofApp::setup() {
  */
 void ofApp::update() {
   // get new frame
-	camera.update();
+  camera.update();
 
   // new frame found
-	if (camera.isFrameNew()) {
+  if (camera.isFrameNew()) {
     // get the current time in ms
     int now = ofGetElapsedTimeMillis();
     if (lastTime == -1) lastTime = now;
@@ -47,7 +47,7 @@ void ofApp::update() {
     // tau is the decay time constant
     float alpha = 1.0 - exp(-dT / tau);
 
-		farneback.calcOpticalFlow(camera);
+    farneback.calcOpticalFlow(camera);
     ofVec2f avgFlow = farneback.getAverageFlow();
     tiltSpeed = abs(avgFlow.y); // accordion on Y-axis
     shakeSpeed = abs(avgFlow.x); // shaking on X-axis
@@ -55,7 +55,7 @@ void ofApp::update() {
     // formula for exponentially-weighted moving average
     tiltSmooth = alpha * tiltSpeed + (1.0 - alpha) * tiltSmooth;
     shakeSmooth = alpha * shakeSpeed + (1.0 - alpha) * shakeSmooth;
-	}
+  }
 }
 
 /**
@@ -64,10 +64,10 @@ void ofApp::update() {
  * Just some testing code.
  */
 void ofApp::draw() {
-	ofBackground(0);
-	ofSetColor(255);
-	camera.draw(400, 100, 640, 480);
-	farneback.draw(400, 100, 640, 480);
+  ofBackground(0);
+  ofSetColor(255);
+  camera.draw(400, 100, 640, 480);
+  farneback.draw(400, 100, 640, 480);
 
   stringstream ss;
   ss << "Velocity: " << tiltSpeed << endl;
