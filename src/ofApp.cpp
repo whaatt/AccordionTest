@@ -22,6 +22,11 @@ using namespace cv;
 void ofApp::setup() {
   // initialize camera
   camera.initGrabber(640, 480);
+
+  // initialize synthesizer
+  synth.init(44100, 256, true);
+  synth.load("data/primary.sf2");
+  synth.setInstrument(1, 23);
 }
 
 /**
@@ -55,6 +60,10 @@ void ofApp::update() {
     // formula for exponentially-weighted moving average
     tiltSmooth = alpha * tiltSpeed + (1.0 - alpha) * tiltSmooth;
     shakeSmooth = alpha * shakeSpeed + (1.0 - alpha) * shakeSmooth;
+
+    // use bellow velocity to set the channel velocity
+    int volume = std::min(127, (int) (tiltSmooth / 2.0 * 127.0));
+    synth.controlChange(1, 7, tiltSmooth > 0.3 ? volume : 0);
   }
 }
 
@@ -76,4 +85,42 @@ void ofApp::draw() {
   if (shakeSmooth < 1.0 && tiltSmooth > 1.0)
     ss << "Movement Detected!" << endl;
   ofDrawBitmapString(ss.str(), 100, 100);
+}
+
+/**
+ * Function: keyPressed
+ * --------------------
+ * Handles key presses.
+ */
+void ofApp::keyPressed(int key) {
+  // start playing a given note
+  if (key >= 'a' && key <= 'z') {
+    // some really hacky shit I'm doing here to play a blues minor scale
+    string qwerty("q.wer..t.y..u.iop..a.s..d.fgh..j.k..l.zxc..v.b..n.m");
+    int note = qwerty.find(key) + 35;
+    if (playing.count(note)) return;
+
+    // note is not already playing: turn it on
+    synth.noteOn(1, note, 127);
+    playing.insert(note);
+  }
+}
+
+/**
+ * Function: keyReleased
+ * ---------------------
+ * Handles key releases.
+ */
+void ofApp::keyReleased(int key) {
+  // stop playing a given note
+  if (key >= 'a' && key <= 'z') {
+    // some really hacky shit I'm doing here to play a blues minor scale
+    string qwerty("q.wer..t.y..u.iop..a.s..d.fgh..j.k..l.zxc..v.b..n.m");
+    int note = qwerty.find(key) + 35;
+    if (!playing.count(note)) return;
+
+    // note is playing: turn it off
+    synth.noteOff(1, note);
+    playing.erase(note);
+  }
 }
