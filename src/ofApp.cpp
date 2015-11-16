@@ -26,7 +26,7 @@ void ofApp::setup() {
   // initialize synthesizer
   synth.init(44100, 256, true);
   synth.load("data/primary.sf2");
-  synth.setInstrument(1, 23);
+  synth.setInstrument(1, 21);
 }
 
 /**
@@ -42,6 +42,8 @@ void ofApp::update() {
 
   // new frame found
   if (camera.isFrameNew()) {
+    numFrames += 1;
+
     // get the current time in ms
     int now = ofGetElapsedTimeMillis();
     if (lastTime == -1) lastTime = now;
@@ -52,10 +54,27 @@ void ofApp::update() {
     // tau is the decay time constant
     float alpha = 1.0 - exp(-dT / tau);
 
-    farneback.calcOpticalFlow(camera);
-    ofVec2f avgFlow = farneback.getAverageFlow();
-    tiltSpeed = abs(avgFlow.y); // accordion on Y-axis
-    shakeSpeed = abs(avgFlow.x); // shaking on X-axis
+    lkFlow.calcOpticalFlow(camera);
+    if (numFrames % 10 == 0) lkFlow.resetFeaturesToTrack();
+    vector<ofVec2f> flows = lkFlow.getMotion();
+
+    float flowX = 0.0;
+    float flowY = 0.0;
+    float avgFlowX = 0.0;
+    float avgFlowY = 0.0;
+
+    // find the absolute average of all flows
+    for (int i = 0; i < flows.size(); i += 1) {
+      // TODO: better built-in way to do this?
+      flowX += abs(flows[i].x);
+      flowY += abs(flows[i].y);
+    }
+
+    avgFlowX = flowX / (float) flows.size();
+    avgFlowY = flowY / (float) flows.size();
+    tiltSpeed = avgFlowX; // accordion on Y-axis
+    shakeSpeed = avgFlowY; // shaking on X-axis
+    if (tiltSpeed != tiltSpeed) return; // NaN
 
     // formula for exponentially-weighted moving average
     tiltSmooth = alpha * tiltSpeed + (1.0 - alpha) * tiltSmooth;
@@ -76,7 +95,7 @@ void ofApp::draw() {
   ofBackground(0);
   ofSetColor(255);
   camera.draw(400, 100, 640, 480);
-  farneback.draw(400, 100, 640, 480);
+  lkFlow.draw(400, 100, 640, 480);
 
   stringstream ss;
   ss << "Velocity: " << tiltSpeed << endl;

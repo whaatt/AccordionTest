@@ -33,7 +33,8 @@ class ofApp : public ofBaseApp {
     ofVideoGrabber camera;
 
     // Farneback is whole image flow
-    ofxCv::FlowFarneback farneback;
+    // LK is flow for features
+    ofxCv::FlowPyrLK lkFlow;
 
     // avoid note repeats by
     // tracking playing notes
@@ -44,5 +45,6 @@ class ofApp : public ofBaseApp {
     float shakeSmooth = 0.0;
     float shakeSpeed = 0.0;
     int lastTime = -1;
-    float tau = 200;
+    int numFrames = 0;
+    float tau = 500;
 };
