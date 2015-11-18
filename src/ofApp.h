@@ -24,6 +24,7 @@ class ofApp : public ofBaseApp {
     // some usual boilerplate
     void keyPressed(int key);
     void keyReleased(int key);
+    void mouseMoved(int x, int y);
 
   private:
     // FluidSynth wrapper
@@ -47,4 +48,21 @@ class ofApp : public ofBaseApp {
     int lastTime = -1;
     int numFrames = 0;
     float tau = 500;
+
+    // GRAPHICS THINGS
+    void drawBaffle(float pct);
+	void drawKeys();
+
+	// Window stuff
+    int wh;
+    int ww;
+    bool fulscr;
+
+    // Baffle stuff
+    float compress;
+    float velocity;
+
+    // Keyboard stuff
+    float keybPosition;
+    bool keybOn;
 };

@@ -27,6 +27,16 @@ void ofApp::setup() {
   synth.init(44100, 256, true);
   synth.load("data/primary.sf2");
   synth.setInstrument(1, 21);
+
+  // initialize graphics
+  ofBackground(190,30,45);
+  wh = ofGetWindowHeight();
+  ww = ofGetWindowWidth();
+  compress=.4;
+  velocity=0;
+  keybPosition=-ww;
+  keybOn=false;
+  fulscr=false;
 }
 
 /**
@@ -84,6 +94,20 @@ void ofApp::update() {
     int volume = std::min(127, (int) (tiltSmooth / 2.0 * 127.0));
     synth.controlChange(1, 7, tiltSmooth > 0.3 ? volume : 0);
   }
+
+  // Slew keyboard on and offscreen
+  if (keybOn){
+    keybPosition=keybPosition*.9;
+  } else {
+    keybPosition=keybPosition+(-ww-keybPosition)*.1;
+  }
+
+  // Compress bellows based on velocity
+  if (velocity>0){
+    compress=compress+(.5-compress)*velocity*.1;
+  } else {
+    compress=compress+(.25-compress)*velocity*-.1;
+  }
 }
 
 /**
@@ -92,7 +116,37 @@ void ofApp::update() {
  * Just some testing code.
  */
 void ofApp::draw() {
-  ofBackground(0);
+
+  // Get window params
+  wh = ofGetWindowHeight();
+  ww = ofGetWindowWidth();
+
+  // Draw baffles
+  ofPushMatrix();
+    for(unsigned int i=0; i<10; i++){
+      ofPushMatrix();
+        ofTranslate(0,i*wh/5*compress*2);
+        drawBaffle(compress);
+      ofPopMatrix();
+    }
+    ofTranslate(0,wh,0);
+  ofPopMatrix();
+
+  // Draw keys with alpha
+  ofPushMatrix();
+    ofTranslate(keybPosition,0);
+
+    ofPushStyle();
+      ofEnableAlphaBlending();
+      ofSetColor(255,255,255,160);
+      ofRect(0,0,1,ww,wh);
+      ofDisableAlphaBlending();
+    ofPopStyle();
+
+    drawKeys();
+  ofPopMatrix();
+
+  // Draw camera, flow, and strings
   ofSetColor(255);
   camera.draw(400, 100, 640, 480);
   lkFlow.draw(400, 100, 640, 480);
@@ -123,6 +177,18 @@ void ofApp::keyPressed(int key) {
     synth.noteOn(1, note, 127);
     playing.insert(note);
   }
+
+  // Tab activates onscreen keyboard
+  if(key==OF_KEY_TAB){
+    keybOn=!keybOn;
+  }
+
+  // F11 activates fullscreen
+  if(key==OF_KEY_F11){
+    fulscr=!fulscr;
+  }
+
+  ofSetFullscreen(fulscr);
 }
 
 /**
@@ -141,5 +207,100 @@ void ofApp::keyReleased(int key) {
     // note is playing: turn it off
     synth.noteOff(1, note);
     playing.erase(note);
+  }
+}
+
+/**
+ * Function: mouseMoved
+ * ---------------------
+ * Handles mouse movement.
+ */
+void ofApp::mouseMoved(int x, int y ){
+  velocity = (float)y/wh-.5;
+}
+
+/**
+ * Function: drawBaffle
+ * ---------------------
+ * Draws skeumorphic baffle.
+ */
+void ofApp::drawBaffle(float pct){
+
+  ofPushStyle();
+  ofSetLineWidth(2);
+  ofSetColor(ofColor::black);
+    ofBeginShape();
+      ofVertex(0,0);
+      ofVertex(ww/10,wh/5*pct);
+    ofEndShape(false);
+
+    ofBeginShape();
+      ofVertex(ww,0);
+      ofVertex(ww-ww/10,wh/5*pct);
+    ofEndShape(false);
+
+    ofBeginShape();
+      ofVertex(ww/10,wh/5*pct);
+      ofVertex(0,wh/5*pct*2);
+    ofEndShape(false);
+
+    ofBeginShape();
+      ofVertex(ww-ww/10,wh/5*pct);
+      ofVertex(ww,wh/5*pct*2);
+    ofEndShape(false);
+
+    ofBeginShape();
+      ofVertex(ww/10,wh/5*pct);
+      ofVertex(ww-ww/10,wh/5*pct);
+    ofEndShape(false);
+  ofPopStyle();
+
+  ofPushStyle();
+  ofSetLineWidth(4);
+  ofSetColor(255,222,23);
+    ofBeginShape();
+      ofVertex(0,0);
+      ofVertex(ww,0);
+    ofEndShape(false);
+  ofPopStyle();
+}
+
+/**
+ * Function: drawKeys
+ * ---------------------
+ * Draws onscreen keyboard.
+ */
+void ofApp::drawKeys(){
+  float keyWidth=ww/12-(ww/12)*.1;
+  float keyHeight=keyWidth;
+  string topChars = "qwertyuiop";
+  string midChars = "asdfghjkl;";
+  string botChars = "zxcvbnm,./";
+
+  for(unsigned int i=1; i<11; i++){
+    ofRectRounded(i*ww/12-25,wh/2-keyHeight/2-keyHeight*1.1,2,keyWidth,keyHeight,10,10,10,10);
+    string letter(1,topChars[i-1]);
+    ofPushStyle();
+      ofSetColor(ofColor::black);
+      ofDrawBitmapString(letter,i*ww/12-25+keyWidth/2,wh/2-keyHeight/2-keyHeight*1.1+keyHeight/2,2);
+    ofPopStyle();
+  }
+
+  for(unsigned int i=1; i<11; i++){
+    ofRectRounded(i*ww/12,wh/2-keyHeight/2,2,keyWidth,keyHeight,10,10,10,10);
+    string letter(1,midChars[i-1]);
+    ofPushStyle();
+      ofSetColor(ofColor::black);
+      ofDrawBitmapString(letter,i*ww/12+keyWidth/2,wh/2,2);
+    ofPopStyle();
+  }
+
+  for(unsigned int i=1; i<11; i++){
+    ofRectRounded(i*ww/12+25,wh/2+keyHeight/2+keyHeight*.1,2,keyWidth,keyHeight,10,10,10,10);
+    string letter(1,botChars[i-1]);
+    ofPushStyle();
+      ofSetColor(ofColor::black);
+      ofDrawBitmapString(letter,i*ww/12+25+keyWidth/2,wh/2+keyHeight+keyHeight*.1,2);
+    ofPopStyle();
   }
 }
