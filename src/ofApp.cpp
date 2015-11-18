@@ -22,21 +22,24 @@ using namespace cv;
 void ofApp::setup() {
   // initialize camera
   camera.initGrabber(640, 480);
+  ofSetWindowTitle("Accordion");
 
   // initialize synthesizer
-  synth.init(44100, 256, true);
-  synth.load("data/primary.sf2");
-  synth.setInstrument(1, 21);
+  synth = new Synthesizer();
+  synth -> init(44100, 256, true);
+  synth -> load("data/primary.sf2");
+  synth -> setInstrument(1, 21);
 
   // initialize graphics
   ofBackground(190,30,45);
   wh = ofGetWindowHeight();
   ww = ofGetWindowWidth();
-  compress=.4;
-  velocity=0;
-  keybPosition=-ww;
-  keybOn=false;
-  fulscr=false;
+  position = 0.25;
+  velocity = 0;
+
+  keybPosition = -ww;
+  keybOn = false;
+  fulscr = false;
 }
 
 /**
@@ -70,6 +73,7 @@ void ofApp::update() {
 
     float flowX = 0.0;
     float flowY = 0.0;
+    float flowYDir = 0.0;
     float avgFlowX = 0.0;
     float avgFlowY = 0.0;
 
@@ -78,36 +82,44 @@ void ofApp::update() {
       // TODO: better built-in way to do this?
       flowX += abs(flows[i].x);
       flowY += abs(flows[i].y);
+      flowYDir += flows[i].y;
     }
 
     avgFlowX = flowX / (float) flows.size();
     avgFlowY = flowY / (float) flows.size();
-    tiltSpeed = avgFlowX; // accordion on Y-axis
-    shakeSpeed = avgFlowY; // shaking on X-axis
+    tiltSpeed = avgFlowY; // accordion on Y-axis
+    shakeSpeed = avgFlowX; // shaking on X-axis
     if (tiltSpeed != tiltSpeed) return; // NaN
 
     // formula for exponentially-weighted moving average
     tiltSmooth = alpha * tiltSpeed + (1.0 - alpha) * tiltSmooth;
     shakeSmooth = alpha * shakeSpeed + (1.0 - alpha) * shakeSmooth;
+    tiltDir = flowYDir;
 
-    // use bellow velocity to set the channel velocity
-    int volume = std::min(127, (int) (tiltSmooth / 2.0 * 127.0));
-    synth.controlChange(1, 7, tiltSmooth > 0.3 ? volume : 0);
+    // use bellow velocity to update the channel synth velocity
+    int volume = std::min(127, 31 + (int) (tiltSmooth / 7.5 * 96.0));
+    int maxIncrement = copysign(1, volume) * (synthVol == 0 || tiltSmooth <= 1.5) ? 5 : 20;
+    int diffIncrement = volume - synthVol; // avoid jumpy changes with a max increment
+
+    // update the synth volume by an increment in direction of tilt velocity
+    synthVol += diffIncrement > maxIncrement ? maxIncrement : diffIncrement;
+    synth -> controlChange(1, 7, tiltSmooth > 1.5 ? synthVol : 0);
+    sounding = tiltSmooth <= 1.5;
   }
 
-  // Slew keyboard on and offscreen
-  if (keybOn){
-    keybPosition=keybPosition*.9;
-  } else {
-    keybPosition=keybPosition+(-ww-keybPosition)*.1;
-  }
+  // slew keyboard on and offscreen
+  if (keybOn) keybPosition = keybPosition * .9;
+  else if (fulscrToggled) keybPosition = -ww * 2;
+  else keybPosition = keybPosition + (-ww - keybPosition) * .1;
 
-  // Compress bellows based on velocity
-  if (velocity>0){
-    compress=compress+(.5-compress)*velocity*.1;
-  } else {
-    compress=compress+(.25-compress)*velocity*-.1;
-  }
+  // reset toggle state
+  if (fulscrToggled)
+    fulscrToggled = false;
+
+  // compress bellows between 0.25 and 0.5 using a linear easing function
+  if (tiltDir > 0) position = position + (1.0 - position) * tiltSmooth * .0025;
+  else position = position - position * tiltSmooth * .005;
+  compress = position * 0.25 + 0.25;
 }
 
 /**
@@ -116,48 +128,37 @@ void ofApp::update() {
  * Just some testing code.
  */
 void ofApp::draw() {
-
-  // Get window params
+  // get window params
   wh = ofGetWindowHeight();
   ww = ofGetWindowWidth();
 
-  // Draw baffles
+  // draw baffles
   ofPushMatrix();
-    for(unsigned int i=0; i<10; i++){
+    for (int i = 0; i < 10; i += 1) {
       ofPushMatrix();
-        ofTranslate(0,i*wh/5*compress*2);
+        // translate based on compression factor
+        ofTranslate(0, i * wh / 5 * compress * 2);
         drawBaffle(compress);
       ofPopMatrix();
     }
-    ofTranslate(0,wh,0);
+
+    // translate all baffles
+    ofTranslate(0, wh, 0);
   ofPopMatrix();
 
-  // Draw keys with alpha
   ofPushMatrix();
-    ofTranslate(keybPosition,0);
+    // draw keys with alpha
+    ofTranslate(keybPosition, 0);
 
     ofPushStyle();
       ofEnableAlphaBlending();
-      ofSetColor(255,255,255,160);
-      ofRect(0,0,1,ww,wh);
+      ofSetColor(255, 255, 255, 160);
+      ofRect(0, 0, ww, wh);
       ofDisableAlphaBlending();
     ofPopStyle();
 
     drawKeys();
   ofPopMatrix();
-
-  // Draw camera, flow, and strings
-  ofSetColor(255);
-  camera.draw(400, 100, 640, 480);
-  lkFlow.draw(400, 100, 640, 480);
-
-  stringstream ss;
-  ss << "Velocity: " << tiltSpeed << endl;
-  ss << "Smoothed: " << tiltSmooth << endl;
-  ss << "Shake: " << shakeSmooth << endl;
-  if (shakeSmooth < 1.0 && tiltSmooth > 1.0)
-    ss << "Movement Detected!" << endl;
-  ofDrawBitmapString(ss.str(), 100, 100);
 }
 
 /**
@@ -174,21 +175,20 @@ void ofApp::keyPressed(int key) {
     if (playing.count(note)) return;
 
     // note is not already playing: turn it on
-    synth.noteOn(1, note, 127);
+    synth -> noteOn(1, note, 127);
     playing.insert(note);
+    pressed.insert(key);
   }
 
-  // Tab activates onscreen keyboard
-  if(key==OF_KEY_TAB){
-    keybOn=!keybOn;
-  }
+  // tab for onscreen keyboard
+  if (key == OF_KEY_TAB) keybOn = !keybOn;
 
-  // F11 activates fullscreen
-  if(key==OF_KEY_F11){
-    fulscr=!fulscr;
+  // ` for fullscreen
+  if (key == '`') {
+    fulscr = !fulscr;
+    fulscrToggled = true;
+    ofSetFullscreen(fulscr);
   }
-
-  ofSetFullscreen(fulscr);
 }
 
 /**
@@ -205,53 +205,44 @@ void ofApp::keyReleased(int key) {
     if (!playing.count(note)) return;
 
     // note is playing: turn it off
-    synth.noteOff(1, note);
+    synth -> noteOff(1, note);
     playing.erase(note);
+    pressed.erase(key);
   }
 }
 
 /**
- * Function: mouseMoved
- * ---------------------
- * Handles mouse movement.
- */
-void ofApp::mouseMoved(int x, int y ){
-  velocity = (float)y/wh-.5;
-}
-
-/**
  * Function: drawBaffle
- * ---------------------
- * Draws skeumorphic baffle.
+ * --------------------
+ * Draws a single skeumorphic baffle.
  */
-void ofApp::drawBaffle(float pct){
-
+void ofApp::drawBaffle(float pct) {
   ofPushStyle();
   ofSetLineWidth(2);
   ofSetColor(ofColor::black);
     ofBeginShape();
       ofVertex(0,0);
-      ofVertex(ww/10,wh/5*pct);
+      ofVertex(ww / 10, wh / 5 * pct);
     ofEndShape(false);
 
     ofBeginShape();
       ofVertex(ww,0);
-      ofVertex(ww-ww/10,wh/5*pct);
+      ofVertex(ww - ww / 10, wh / 5 * pct);
     ofEndShape(false);
 
     ofBeginShape();
-      ofVertex(ww/10,wh/5*pct);
-      ofVertex(0,wh/5*pct*2);
+      ofVertex(ww / 10, wh / 5 * pct);
+      ofVertex(0,wh / 5 * pct * 2);
     ofEndShape(false);
 
     ofBeginShape();
-      ofVertex(ww-ww/10,wh/5*pct);
-      ofVertex(ww,wh/5*pct*2);
+      ofVertex(ww - ww / 10, wh / 5 * pct);
+      ofVertex(ww,wh / 5 * pct * 2);
     ofEndShape(false);
 
     ofBeginShape();
-      ofVertex(ww/10,wh/5*pct);
-      ofVertex(ww-ww/10,wh/5*pct);
+      ofVertex(ww / 10, wh / 5 * pct);
+      ofVertex(ww - ww / 10, wh / 5 * pct);
     ofEndShape(false);
   ofPopStyle();
 
@@ -267,40 +258,61 @@ void ofApp::drawBaffle(float pct){
 
 /**
  * Function: drawKeys
- * ---------------------
+ * ------------------
  * Draws onscreen keyboard.
  */
 void ofApp::drawKeys(){
-  float keyWidth=ww/12-(ww/12)*.1;
-  float keyHeight=keyWidth;
+  float keyWidth = ww / 12 - (ww / 12) * .1;
+  float keyHeight = keyWidth; // squares
+
   string topChars = "qwertyuiop";
   string midChars = "asdfghjkl;";
   string botChars = "zxcvbnm,./";
 
-  for(unsigned int i=1; i<11; i++){
-    ofRectRounded(i*ww/12-25,wh/2-keyHeight/2-keyHeight*1.1,2,keyWidth,keyHeight,10,10,10,10);
-    string letter(1,topChars[i-1]);
+  // print out the top chars
+  for (int i = 1; i < 11; i += 1) {
+    if (pressed.count(topChars[i - 1])) ofSetColor(ofColor(170, 255, 170));
+    else ofSetColor(ofColor(255, 255, 255)); // default is white
+
+    ofRectRounded(i * ww / 12 - 25, wh / 2 - keyHeight / 2 - keyHeight * 1.1,
+      2, keyWidth, keyHeight, 10, 10, 10, 10); // position and size
+    string letter(1, topChars[i - 1]); // for drawing bitmap string
+
     ofPushStyle();
       ofSetColor(ofColor::black);
-      ofDrawBitmapString(letter,i*ww/12-25+keyWidth/2,wh/2-keyHeight/2-keyHeight*1.1+keyHeight/2,2);
+      ofDrawBitmapString(letter, i * ww / 12 - 25 + keyWidth / 2,
+        wh / 2 - keyHeight / 2 - keyHeight * 1.1 + keyHeight / 2, 2);
     ofPopStyle();
   }
 
-  for(unsigned int i=1; i<11; i++){
-    ofRectRounded(i*ww/12,wh/2-keyHeight/2,2,keyWidth,keyHeight,10,10,10,10);
-    string letter(1,midChars[i-1]);
+  // print out the middle chars
+  for (int i = 1; i < 11; i += 1) {
+    if (pressed.count(midChars[i - 1])) ofSetColor(ofColor(170, 255, 170));
+    else ofSetColor(ofColor(255, 255, 255)); // default is white
+
+    ofRectRounded(i * ww / 12, wh / 2 - keyHeight / 2, 2,
+      keyWidth, keyHeight, 10, 10, 10, 10); // position and size
+    string letter(1, midChars[i - 1]); // for drawing bitmap string
+
     ofPushStyle();
       ofSetColor(ofColor::black);
-      ofDrawBitmapString(letter,i*ww/12+keyWidth/2,wh/2,2);
+      ofDrawBitmapString(letter, i * ww / 12 + keyWidth / 2, wh / 2, 2);
     ofPopStyle();
   }
 
-  for(unsigned int i=1; i<11; i++){
-    ofRectRounded(i*ww/12+25,wh/2+keyHeight/2+keyHeight*.1,2,keyWidth,keyHeight,10,10,10,10);
-    string letter(1,botChars[i-1]);
+  // print out the bottom chars
+  for (int i = 1; i < 11; i += 1) {
+    if (pressed.count(botChars[i - 1])) ofSetColor(ofColor(170, 255, 170));
+    else ofSetColor(ofColor(255, 255, 255)); // default is white
+
+    ofRectRounded(i * ww / 12 + 25, wh / 2 + keyHeight / 2 + keyHeight *.1,
+      2, keyWidth, keyHeight, 10, 10, 10, 10); // position and size
+    string letter(1, botChars[i - 1]); // for drawing bitmap string
+
     ofPushStyle();
       ofSetColor(ofColor::black);
-      ofDrawBitmapString(letter,i*ww/12+25+keyWidth/2,wh/2+keyHeight+keyHeight*.1,2);
+      ofDrawBitmapString(letter, i * ww / 12 + 25 + keyWidth / 2,
+        wh / 2 + keyHeight + keyHeight *.1, 2);
     ofPopStyle();
   }
 }

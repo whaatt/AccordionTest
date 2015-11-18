@@ -24,11 +24,11 @@ class ofApp : public ofBaseApp {
     // some usual boilerplate
     void keyPressed(int key);
     void keyReleased(int key);
-    void mouseMoved(int x, int y);
 
   private:
-    // FluidSynth wrapper
-    Synthesizer synth;
+    // FluidSynth wrapper class
+    Synthesizer* synth = NULL;
+    int synthVol = 0;
 
     // initialize camera
     ofVideoGrabber camera;
@@ -41,28 +41,33 @@ class ofApp : public ofBaseApp {
     // tracking playing notes
     set<int> playing;
 
+    bool sounding = false;
     float tiltSmooth = 0.0;
     float tiltSpeed = 0.0;
     float shakeSmooth = 0.0;
     float shakeSpeed = 0.0;
+    float tiltDir = 0.0;
     int lastTime = -1;
     int numFrames = 0;
-    float tau = 500;
+    float tau = 250;
 
-    // GRAPHICS THINGS
+    // graphics-related functions
     void drawBaffle(float pct);
-	void drawKeys();
+    void drawKeys();
 
-	// Window stuff
-    int wh;
-    int ww;
-    bool fulscr;
+    // window-related stuff
+    int wh; // window height
+    int ww; // window width
+    bool fulscr; // fullscreen
+    bool fulscrToggled;
 
-    // Baffle stuff
+    // baffle stuff
+    float position;
     float compress;
     float velocity;
 
-    // Keyboard stuff
+    // keyboard stuff
     float keybPosition;
+    set<int> pressed;
     bool keybOn;
 };
