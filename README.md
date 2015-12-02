@@ -5,8 +5,10 @@ Laptop Accordion Support Code
 ### WTF
 To get AccordionTest running, create an empty OpenFrameworks project
 using the standard add-ons ofxGui and ofxOpenCv, in addition to the
-custom add-on ofxCv. Then copy the `/src` directory of this repository
-to your project's `/src` directory.
+custom add-on ofxCv. Then merge the `/src` directory of this repository
+with your project's `/src` directory, and similarly, copy the `/data`
+directory to your project's `/bin` directory. You should ultimately
+put a SoundFont in `/bin/data` as well with the filename `primary.sf2`.
 
 ### FluidSynth
 Go [here](http://sourceforge.net/projects/fluidsynth/files/) and download
