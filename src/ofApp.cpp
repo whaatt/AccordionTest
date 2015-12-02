@@ -10,9 +10,76 @@
 #include "ofApp.h"
 #include <sstream>
 #include <math.h>
+#include <dirent.h>
+#include "MIDI/MidiFile.h"
 
 using namespace ofxCv;
 using namespace cv;
+
+/**
+ * Function: getMIDIFiles
+ * ----------------------
+ * Gets the MIDI files in a directory
+ */
+bool getMIDIFiles(vector<string>& list, string dirName) {
+  DIR *dir; struct dirent *ent;
+  // ugly shit that looks like C code
+  if ((dir = opendir(dirName.c_str())) != NULL) {
+    while ((ent = readdir(dir)) != NULL) {
+      char* name = ent -> d_name;
+      size_t len = strlen(name);
+
+      if (len > 4 && strcmp(name + len - 4, ".mid") == 0)
+        list.push_back(dirName + "/" + name); // add MIDI to list
+    }
+
+    // clean up
+    closedir(dir);
+    return true;
+  }
+
+  // could not open
+  return false;
+}
+
+/**
+ * Function: buildSongVector
+ * -------------------------
+ * Builds a vector of vectors representing
+ * all of the notes in a song. Each inner
+ * vector represents notes played at a
+ * particular time together.
+ */
+void buildSongVector(vector<vector<Note>>& song, string fileName) {
+  MidiFile songMIDI; // from Midifile library
+  songMIDI.read(fileName);
+
+  songMIDI.linkNotePairs();
+  songMIDI.doTimeAnalysis();
+  songMIDI.joinTracks();
+
+  MidiEvent* event;
+  int simulIndex = 0;
+  song.clear(); // empty old song
+  song.push_back(vector<Note>());
+  int deltaTick = (&songMIDI[0][0]) -> tick;
+
+  for (int evIdx = 0; evIdx < songMIDI[0].size(); evIdx += 1) {
+    event = &songMIDI[0][evIdx];
+    if (!event -> isNoteOn()) continue;
+
+    if (event -> tick != deltaTick) {
+      deltaTick = event -> tick;
+      song.push_back(vector<Note>());
+      simulIndex += 1;
+    }
+
+    Note newNote;
+    newNote.note = (int) (*event)[1];
+    newNote.duration = event -> getDurationInSeconds();
+    song[simulIndex].push_back(newNote);
+  }
+}
 
 /**
  * Function: setup
@@ -23,6 +90,17 @@ void ofApp::setup() {
   // initialize camera
   camera.initGrabber(640, 480);
   ofSetWindowTitle("Accordion");
+
+  // modes just contains keyboard modes [irrelevant here]
+  mapper.init("data/scales.txt", "data/modes.txt");
+
+  if (getMIDIFiles(filesMIDI, "data/MIDI"))
+    loadedMIDI = true; // successful load
+
+  // get UI listing variables
+  scales = mapper.getScales();
+  keys = mapper.getKeys();
+  modes = mapper.getModes();
 
   // initialize synthesizer
   synth = new Synthesizer();
@@ -108,9 +186,9 @@ void ofApp::update() {
   }
 
   // slew keyboard on and offscreen
-  if (keybOn) keybPosition = keybPosition * .9;
+  if (keybOn) keybPosition = 0; //keybPosition * .9;
   else if (fulscrToggled) keybPosition = -ww * 2;
-  else keybPosition = keybPosition + (-ww - keybPosition) * .1;
+  else keybPosition = -ww; //keybPosition + (-ww - keybPosition) * .1;
 
   // reset toggle state
   if (fulscrToggled)
@@ -168,20 +246,41 @@ void ofApp::draw() {
  */
 void ofApp::keyPressed(int key) {
   // start playing a given note
-  if (key >= 'a' && key <= 'z') {
-    // some really hacky shit I'm doing here to play a blues minor scale
-    string qwerty("q.wer..t.y..u.iop..a.s..d.fgh..j.k..l.zxc..v.b..n.m");
-    int note = qwerty.find(key) + 35;
-    if (playing.count(note)) return;
+  if (key >= 'a' && key <= 'z' || key == ';' ||
+      key == ',' || key == '.' || key == '/') {
+    if (!playThrough) {
+      int note = mapper.getNote(key);
+      if (playing.count(note)) return;
 
-    // note is not already playing: turn it on
-    synth -> noteOn(1, note, 127);
-    playing.insert(note);
-    pressed.insert(key);
+      // note is not already playing: turn it on
+      synth -> noteOn(1, note, 127);
+      playing.insert(note);
+      pressed.insert(key);
+    }
+
+    else {
+      if (songPosition >= song.size()) {
+        playThrough = false;
+        return;
+      }
+
+      if (keyPosMap.find(key) != keyPosMap.end())
+        return; // already handling this key press
+
+      keyPosMap[key] = songPosition; // turn off shit by the key
+      for (int i = 0; i < song[songPosition].size(); i += 1) {
+        int note = song[songPosition][i].note;
+        synth -> noteOn(1, note, 127);
+      }
+
+      // move to next
+      pressed.insert(key);
+      songPosition += 1;
+    }
   }
 
-  // tab for onscreen keyboard
-  if (key == OF_KEY_TAB) keybOn = !keybOn;
+  // backslash for onscreen keyboard
+  if (key == '\\') keybOn = !keybOn;
 
   // ` for fullscreen
   if (key == '`') {
@@ -189,6 +288,34 @@ void ofApp::keyPressed(int key) {
     fulscrToggled = true;
     ofSetFullscreen(fulscr);
   }
+
+  // toggle play through
+  if (key == '=') {
+    // toggle off
+    if (playThrough) {
+      playThrough = false;
+      synth -> allNotesOff(1);
+      return;
+    }
+
+    // TODO: error message this
+    if (!loadedMIDI) return;
+    playThrough = true;
+    songPosition = 0;
+
+    // calculate note lengths and positions
+    buildSongVector(song, filesMIDI[filesIndex]);
+  }
+
+  // change scale [e.g. major] with [ and key [e.g. C#] with ]
+  if (key == '[') mapper.setKeyIndex(keyIndex = ++keyIndex % keys.size());
+  if (key == ']') mapper.setScaleIndex(scaleIndex = ++scaleIndex % scales.size());
+
+  // change mode [keyboard layout schematic, e.g. inc by rows] with '
+  if (key == '\'') mapper.setModeIndex(modeIndex = ++modeIndex % modes.size());
+
+  // change the selected song in directory with -
+  if (key == '-') filesIndex = ++filesIndex % filesMIDI.size();
 }
 
 /**
@@ -198,16 +325,28 @@ void ofApp::keyPressed(int key) {
  */
 void ofApp::keyReleased(int key) {
   // stop playing a given note
-  if (key >= 'a' && key <= 'z') {
-    // some really hacky shit I'm doing here to play a blues minor scale
-    string qwerty("q.wer..t.y..u.iop..a.s..d.fgh..j.k..l.zxc..v.b..n.m");
-    int note = qwerty.find(key) + 35;
-    if (!playing.count(note)) return;
+  if (key >= 'a' && key <= 'z' || key == ';' ||
+      key == ',' || key == '.' || key == '/') {
+    if (!playThrough) {
+      int note = mapper.getNote(key);
+      if (!playing.count(note)) return;
 
-    // note is playing: turn it off
-    synth -> noteOff(1, note);
-    playing.erase(note);
-    pressed.erase(key);
+      // note is playing: turn it off
+      synth -> noteOff(1, note);
+      playing.erase(note);
+      pressed.erase(key);
+    }
+
+    else {
+      for (int i = 0; i < song[keyPosMap[key]].size(); i += 1) {
+        int note = song[keyPosMap[key]][i].note;
+        synth -> noteOff(1, note);
+      }
+
+      // remove the key from map
+      pressed.erase(key);
+      keyPosMap.erase(keyPosMap.find(key));
+    }
   }
 }
 
@@ -264,6 +403,15 @@ void ofApp::drawBaffle(float pct) {
 void ofApp::drawKeys(){
   float keyWidth = ww / 12 - (ww / 12) * .1;
   float keyHeight = keyWidth; // squares
+
+  ofSetColor(ofColor(0, 0, 255));
+  ofDrawBitmapString("Toggle Keyboard With Backslash (\\)\n" +
+                     string("Current Scale: ") + scales[scaleIndex] + " (])\n" +
+                     string("Current Key: ") + keys[keyIndex] + " ([)\n" +
+                     string("Current Mode: ") + modes[modeIndex] + " (')\n\n" +
+                     string("Selected Song: ") + filesMIDI[filesIndex].substr(10, string::npos) + " (-)\n" +
+                     string("Play Through Mode: ") + (playThrough ? string("On") : string("Off")) +
+                     string(" (=)"), 10, 20, 2); // TODO: clean this shit out of this print
 
   string topChars = "qwertyuiop";
   string midChars = "asdfghjkl;";

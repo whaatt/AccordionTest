@@ -12,7 +12,20 @@
 
 #include "ofMain.h"
 #include "ofxCv.h"
+#include "mapper.h"
 #include "synthesizer.h"
+
+/**
+ * Type: Note
+ * ----------
+ * A simple struct to hold
+ * notes derived from MIDI.
+ */
+struct Note {
+  int note;
+  // in seconds
+  double duration;
+};
 
 // master OpenFrameworks runner
 class ofApp : public ofBaseApp {
@@ -40,6 +53,26 @@ class ofApp : public ofBaseApp {
     // avoid note repeats by
     // tracking playing notes
     set<int> playing;
+
+    // map keys to scales
+    vector<string> scales;
+    vector<string> keys;
+    vector<string> modes;
+    Mapper mapper;
+
+    // play through files
+    vector<string> filesMIDI;
+    bool loadedMIDI = false;
+    bool playThrough = false;
+    int filesIndex = 0;
+    int songPosition = 0;
+    map<int, int> keyPosMap;
+    vector<vector<Note>> song;
+
+    // mapping state
+    int scaleIndex = 0;
+    int keyIndex = 0;
+    int modeIndex = 0;
 
     bool sounding = false;
     float tiltSmooth = 0.0;
