@@ -25,6 +25,13 @@ struct Note {
   int note;
   // in seconds
   double duration;
+
+  // comparison functions for algorithms
+  bool operator>(const Note& n) const { return note > n.note; }
+  bool operator>=(const Note& n) const { return note >= n.note; }
+  bool operator==(const Note& n) const { return note == n.note; }
+  bool operator<=(const Note& n) const { return note <= n.note; }
+  bool operator<(const Note& n) const { return note < n.note; }
 };
 
 // master OpenFrameworks runner
@@ -37,6 +44,7 @@ class ofApp : public ofBaseApp {
     // some usual boilerplate
     void keyPressed(int key);
     void keyReleased(int key);
+    void windowResized(int width, int height);
 
   private:
     // FluidSynth wrapper class
@@ -64,16 +72,32 @@ class ofApp : public ofBaseApp {
     vector<string> filesMIDI;
     bool loadedMIDI = false;
     bool playThrough = false;
+    bool hardMode = false;
     int filesIndex = 0;
     int songPosition = 0;
     map<int, int> keyPosMap;
+
+    // built for every file
     vector<vector<Note>> song;
+    vector<Note> topNotes;
+    vector<char> songKeys;
+
+    // hard mode coloring
+    vector<int> previews;
+    int highlight = -1;
+    int highTime;
+    int highDuration;
+
+    // ignore side presses
+    int lastPressTime = 0;
+    int debounceTime = 35;
 
     // mapping state
     int scaleIndex = 0;
     int keyIndex = 0;
     int modeIndex = 0;
 
+    // bellows state
     bool sounding = false;
     float tiltSmooth = 0.0;
     float tiltSpeed = 0.0;
@@ -94,13 +118,30 @@ class ofApp : public ofBaseApp {
     bool fulscr; // fullscreen
     bool fulscrToggled;
 
+    // whether to draw help text
+    // in the barebones view
+    bool keybToggled = false;
+
     // baffle stuff
     float position;
     float compress;
     float velocity;
 
-    // keyboard stuff
+    // keyboard graphics stuff
+    map<int, ofColor> color;
     float keybPosition;
     set<int> pressed;
     bool keybOn;
+
+    // mouse velocity stuff
+    int lastX; // defined
+    int lastY; // defined
+    int lastTimeM = -1;
+    float xVel = 0.0;
+    float yVel = 0.0;
+    float xVelSm = 0.0;
+    float yVelSm = 0.0;
+    float xAcc = 0.0;
+    float yAcc = 0.0;
+    float vTau = 250;
 };

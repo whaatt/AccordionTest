@@ -50,7 +50,8 @@ bool getMIDIFiles(vector<string>& list, string dirName) {
  * vector represents notes played at a
  * particular time together.
  */
-void buildSongVector(vector<vector<Note>>& song, string fileName) {
+void buildSongVector(vector<vector<Note>>& song, vector<char>& songKeys,
+  vector<Note>& topNotes, string fileName) {
   MidiFile songMIDI; // from Midifile library
   songMIDI.read(fileName);
 
@@ -59,11 +60,11 @@ void buildSongVector(vector<vector<Note>>& song, string fileName) {
   songMIDI.joinTracks();
 
   MidiEvent* event;
-  int simulIndex = 0;
+  int simulIndex = -1;
   song.clear(); // empty old song
-  song.push_back(vector<Note>());
-  int deltaTick = (&songMIDI[0][0]) -> tick;
+  int deltaTick = -1;
 
+  // iterate through list of note on events and add them to song
   for (int evIdx = 0; evIdx < songMIDI[0].size(); evIdx += 1) {
     event = &songMIDI[0][evIdx];
     if (!event -> isNoteOn()) continue;
@@ -78,6 +79,37 @@ void buildSongVector(vector<vector<Note>>& song, string fileName) {
     newNote.note = (int) (*event)[1];
     newNote.duration = event -> getDurationInSeconds();
     song[simulIndex].push_back(newNote);
+  }
+
+  if (song.size() == 0) return; // empty
+  string hardKeys("fghj"); // six notes guitar hero style
+  Note lastNote = *max_element(song[0].begin(), song[0].end());
+  int lastKeyIndex = 2; // corresponds to h
+  songKeys.push_back(hardKeys[lastKeyIndex]);
+  topNotes.push_back(lastNote);
+
+  // determine hard mode key mappings [jank]
+  for (int i = 1; i < song.size(); i += 1) {
+    Note currNote = *max_element(song[i].begin(), song[i].end());
+    int diff = currNote.note - lastNote.note; // determines key interval
+
+    int nextKeyIndex;
+    if (diff == 0) nextKeyIndex = lastKeyIndex; // same note
+    else if (diff > 0 && diff < 3) nextKeyIndex = (lastKeyIndex + 1) % hardKeys.size();
+    else if (diff > 2 && diff < 5) nextKeyIndex = (lastKeyIndex + 2) % hardKeys.size();
+    else if (diff < 0 && diff > -3) nextKeyIndex = (lastKeyIndex - 1) % hardKeys.size();
+    else if (diff < -2 && diff > -5) nextKeyIndex = (lastKeyIndex - 2) % hardKeys.size();
+    else if (diff > 4) nextKeyIndex = (lastKeyIndex + 3) % hardKeys.size();
+    else nextKeyIndex = (lastKeyIndex - 3) % hardKeys.size();
+
+    // normalize negative mods to positive before append
+    if (nextKeyIndex < 0) nextKeyIndex += hardKeys.size();
+    songKeys.push_back(hardKeys[nextKeyIndex]);
+    topNotes.push_back(currNote);
+
+    // update last values
+    lastNote = currNote;
+    lastKeyIndex = nextKeyIndex;
   }
 }
 
@@ -135,15 +167,55 @@ void ofApp::update() {
   if (camera.isFrameNew()) {
     numFrames += 1;
 
+    // start with base values on first call
+    if (lastX == -1 || lastY == -1) {
+      lastX = ofGetMouseX();
+      lastY = ofGetMouseY();
+      return;
+    }
+
     // get the current time in ms
     int now = ofGetElapsedTimeMillis();
+    if (lastTimeM == -1) lastTimeM = now;
+
+    float dT = now - lastTimeM;
+    if (dT == 0) return;
+    lastTimeM = now;
+
+    // tau is the decay time constant
+    float alpha = 1.0 - exp(-dT / vTau);
+
+    // update raw values
+    int newX = ofGetMouseX();
+    int newY = ofGetMouseY();
+    xVel = (float) (newX - lastX) / dT;
+    yVel = (float) (newY - lastY) / dT;
+    lastX = newX;
+    lastY = newY;
+
+    // smooth the raw velocity values and update accel
+    float xVelSmNew = alpha * xVel + (1.0 - alpha) * xVelSm;
+    float yVelSmNew = alpha * yVel + (1.0 - alpha) * yVelSm;
+    xAcc = (xVelSmNew - xVelSm) / dT;
+    yAcc = (yVelSmNew - yVelSm) / dT;
+    xVelSm = xVelSmNew;
+    yVelSm = yVelSmNew;
+
+    // TODO: decide if we want this
+    // synth -> pitchBend(1, -yVelSm);
+
+    // below this line is
+    // smoothing shit for
+    // tilt detection
+
+    // get the current time in ms
     if (lastTime == -1) lastTime = now;
 
-    float dT = now - lastTime;
+    dT = now - lastTime;
     lastTime = now;
 
     // tau is the decay time constant
-    float alpha = 1.0 - exp(-dT / tau);
+    alpha = 1.0 - exp(-dT / tau);
 
     lkFlow.calcOpticalFlow(camera);
     if (numFrames % 10 == 0) lkFlow.resetFeaturesToTrack();
@@ -182,7 +254,7 @@ void ofApp::update() {
     // update the synth volume by an increment in direction of tilt velocity
     synthVol += diffIncrement > maxIncrement ? maxIncrement : diffIncrement;
     synth -> controlChange(1, 7, tiltSmooth > 1.5 ? synthVol : 0);
-    sounding = tiltSmooth <= 1.5;
+    sounding = tiltSmooth > 1.5;
   }
 
   // slew keyboard on and offscreen
@@ -224,13 +296,17 @@ void ofApp::draw() {
     ofTranslate(0, wh, 0);
   ofPopMatrix();
 
+  if (!keybToggled)
+    ofDrawBitmapString("Welcome to Laptop Accordion 0.0.1!\n" + // welcome
+      string("Toggle Keyboard With Backslash (\\)"), ww / 2 - 130, 20, 2);
+
   ofPushMatrix();
     // draw keys with alpha
     ofTranslate(keybPosition, 0);
 
     ofPushStyle();
       ofEnableAlphaBlending();
-      ofSetColor(255, 255, 255, 160);
+      ofSetColor(255, 255, 255, 180);
       ofRect(0, 0, ww, wh);
       ofDisableAlphaBlending();
     ofPopStyle();
@@ -259,13 +335,23 @@ void ofApp::keyPressed(int key) {
     }
 
     else {
-      if (songPosition >= song.size()) {
-        playThrough = false;
-        return;
-      }
+      // avoid multiple key presses
+      // even those we are not handling
+      if (pressed.count(key)) return;
+      pressed.insert(key);
+
+      // bellows not moving [hard mode only]
+      if (hardMode && !sounding) return;
 
       if (keyPosMap.find(key) != keyPosMap.end())
         return; // already handling this key press
+
+      int now = ofGetElapsedTimeMillis();
+      if (now - lastPressTime < debounceTime)
+        return; // likely an accidental key mash
+
+      if (hardMode && key != highlight)
+        return; // wrong key played
 
       keyPosMap[key] = songPosition; // turn off shit by the key
       for (int i = 0; i < song[songPosition].size(); i += 1) {
@@ -273,14 +359,37 @@ void ofApp::keyPressed(int key) {
         synth -> noteOn(1, note, 127);
       }
 
+      // colorings
+      if (hardMode) {
+        previews.clear();
+        if (songPosition + 1 < song.size()) highlight = songKeys[songPosition + 1];
+        if (songPosition + 2 < song.size()) previews.push_back(songKeys[songPosition + 2]);
+        if (songPosition + 3 < song.size()) previews.push_back(songKeys[songPosition + 3]);
+        if (songPosition + 4 < song.size()) previews.push_back(songKeys[songPosition + 4]);
+        if (songPosition + 5 < song.size()) previews.push_back(songKeys[songPosition + 5]);
+        if (songPosition + 6 < song.size()) previews.push_back(songKeys[songPosition + 6]);
+        if (songPosition + 7 < song.size()) previews.push_back(songKeys[songPosition + 7]);
+      }
+
       // move to next
-      pressed.insert(key);
+      lastPressTime = now;
       songPosition += 1;
     }
+
+    int red = 170;
+    int green = (255 + 221 + rand() % 34) / 2;
+    int blue = (200 + 200 + rand() % 55) / 2;
+    ofColor random(red, green, blue);
+    // ofColor green(170, 255, 170);
+    color[key] = random;
   }
 
-  // backslash for onscreen keyboard
-  if (key == '\\') keybOn = !keybOn;
+  // press backslash for
+  // onscreen keyboard
+  if (key == '\\') {
+    keybOn = !keybOn;
+    keybToggled = true;
+  }
 
   // ` for fullscreen
   if (key == '`') {
@@ -289,12 +398,19 @@ void ofApp::keyPressed(int key) {
     ofSetFullscreen(fulscr);
   }
 
+  // toggle hard mode for play through
+  if (key == '0' && !playThrough)
+    hardMode = !hardMode;
+
   // toggle play through
   if (key == '=') {
     // toggle off
     if (playThrough) {
       playThrough = false;
       synth -> allNotesOff(1);
+      pressed.clear();
+      previews.clear();
+      highlight = -1;
       return;
     }
 
@@ -304,7 +420,25 @@ void ofApp::keyPressed(int key) {
     songPosition = 0;
 
     // calculate note lengths and positions
-    buildSongVector(song, filesMIDI[filesIndex]);
+    buildSongVector(song, songKeys, topNotes, filesMIDI[filesIndex]);
+
+    // bad song passed
+    if (!song.size()) {
+      playThrough = false;
+      return;
+    }
+
+    // highlights
+    if (hardMode) {
+      previews.clear();
+      if (song.size() > 0) highlight = songKeys[0];
+      if (song.size() > 1) previews.push_back(songKeys[1]);
+      if (song.size() > 2) previews.push_back(songKeys[2]);
+      if (song.size() > 3) previews.push_back(songKeys[3]);
+      if (song.size() > 4) previews.push_back(songKeys[4]);
+      if (song.size() > 5) previews.push_back(songKeys[5]);
+      if (song.size() > 6) previews.push_back(songKeys[6]);
+    }
   }
 
   // change scale [e.g. major] with [ and key [e.g. C#] with ]
@@ -338,6 +472,13 @@ void ofApp::keyReleased(int key) {
     }
 
     else {
+      // do nothing if key pressed but was initially ignored
+      if (pressed.count(key) && !keyPosMap.count(key)) {
+        pressed.erase(key); // reset key state
+        return;
+      }
+
+      // turn off all notes in the time vector for the given key
       for (int i = 0; i < song[keyPosMap[key]].size(); i += 1) {
         int note = song[keyPosMap[key]][i].note;
         synth -> noteOff(1, note);
@@ -346,6 +487,15 @@ void ofApp::keyReleased(int key) {
       // remove the key from map
       pressed.erase(key);
       keyPosMap.erase(keyPosMap.find(key));
+
+      // song is over so disable play through
+      if (songPosition >= song.size()) {
+        synth -> allNotesOff(1);
+        playThrough = false;
+        pressed.clear();
+        previews.clear();
+        highlight = -1;
+      }
     }
   }
 }
@@ -387,10 +537,10 @@ void ofApp::drawBaffle(float pct) {
 
   ofPushStyle();
   ofSetLineWidth(4);
-  ofSetColor(255,222,23);
+  ofSetColor(255, 222, 23);
     ofBeginShape();
-      ofVertex(0,0);
-      ofVertex(ww,0);
+      ofVertex(0, 0);
+      ofVertex(ww, 0);
     ofEndShape(false);
   ofPopStyle();
 }
@@ -406,61 +556,131 @@ void ofApp::drawKeys(){
 
   ofSetColor(ofColor(0, 0, 255));
   ofDrawBitmapString("Toggle Keyboard With Backslash (\\)\n" +
+                     string("Toggle Fullscreen With Tick (`)\n\n") +
                      string("Current Scale: ") + scales[scaleIndex] + " (])\n" +
                      string("Current Key: ") + keys[keyIndex] + " ([)\n" +
                      string("Current Mode: ") + modes[modeIndex] + " (')\n\n" +
-                     string("Selected Song: ") + filesMIDI[filesIndex].substr(10, string::npos) + " (-)\n" +
-                     string("Play Through Mode: ") + (playThrough ? string("On") : string("Off")) +
-                     string(" (=)"), 10, 20, 2); // TODO: clean this shit out of this print
+                     string("Selected Song: ") + filesMIDI[filesIndex].substr(10, filesMIDI[filesIndex].size() - 14) +
+                     string(" (-)\nPlay Through Mode: ") + (playThrough ? string("Running") : string("Stopped")) +
+                     string(" (=)\nHard Mode: ") + (hardMode ? string("On") : string("Off")) + " (0)", 10, 20, 2);
 
-  string topChars = "qwertyuiop";
-  string midChars = "asdfghjkl;";
-  string botChars = "zxcvbnm,./";
+  if (!hardMode) {
+    string topChars = "qwertyuiop";
+    string midChars = "asdfghjkl;";
+    string botChars = "zxcvbnm,./";
 
-  // print out the top chars
-  for (int i = 1; i < 11; i += 1) {
-    if (pressed.count(topChars[i - 1])) ofSetColor(ofColor(170, 255, 170));
-    else ofSetColor(ofColor(255, 255, 255)); // default is white
+    // print out the top chars
+    for (int i = 1; i < 11; i += 1) {
+      if (pressed.count(topChars[i - 1])) ofSetColor(color[topChars[i - 1]]);
+      else ofSetColor(ofColor(255, 255, 255)); // default is white
 
-    ofRectRounded(i * ww / 12 - 25, wh / 2 - keyHeight / 2 - keyHeight * 1.1,
-      2, keyWidth, keyHeight, 10, 10, 10, 10); // position and size
-    string letter(1, topChars[i - 1]); // for drawing bitmap string
+      ofRectRounded(i * ww / 12 - 25, wh / 2 - keyHeight / 2 - keyHeight * 1.1,
+        2, keyWidth, keyHeight, 10, 10, 10, 10); // position and size
+      string letter(1, topChars[i - 1]); // for drawing bitmap string
 
-    ofPushStyle();
-      ofSetColor(ofColor::black);
-      ofDrawBitmapString(letter, i * ww / 12 - 25 + keyWidth / 2,
-        wh / 2 - keyHeight / 2 - keyHeight * 1.1 + keyHeight / 2, 2);
-    ofPopStyle();
+      ofPushStyle();
+        ofSetColor(ofColor::black);
+        ofDrawBitmapString(letter, i * ww / 12 - 25 + keyWidth / 2,
+          wh / 2 - keyHeight / 2 - keyHeight * 1.1 + keyHeight / 2, 2);
+      ofPopStyle();
+    }
+
+    // print out the middle chars
+    for (int i = 1; i < 11; i += 1) {
+      if (pressed.count(midChars[i - 1])) ofSetColor(color[midChars[i - 1]]);
+      else ofSetColor(ofColor(255, 255, 255)); // default is white
+
+      ofRectRounded(i * ww / 12, wh / 2 - keyHeight / 2, 2,
+        keyWidth, keyHeight, 10, 10, 10, 10); // position and size
+      string letter(1, midChars[i - 1]); // for drawing bitmap string
+
+      ofPushStyle();
+        ofSetColor(ofColor::black);
+        ofDrawBitmapString(letter, i * ww / 12 + keyWidth / 2, wh / 2, 2);
+      ofPopStyle();
+    }
+
+    // print out the bottom chars
+    for (int i = 1; i < 11; i += 1) {
+      if (pressed.count(botChars[i - 1])) ofSetColor(color[botChars[i - 1]]);
+      else ofSetColor(ofColor(255, 255, 255)); // default is white
+
+      ofRectRounded(i * ww / 12 + 25, wh / 2 + keyHeight / 2 + keyHeight * .1,
+        2, keyWidth, keyHeight, 10, 10, 10, 10); // position and size
+      string letter(1, botChars[i - 1]); // for drawing bitmap string
+
+      ofPushStyle();
+        ofSetColor(ofColor::black);
+        ofDrawBitmapString(letter, i * ww / 12 + 25 + keyWidth / 2,
+          wh / 2 + keyHeight + keyHeight *.1, 2);
+      ofPopStyle();
+    }
   }
 
-  // print out the middle chars
-  for (int i = 1; i < 11; i += 1) {
-    if (pressed.count(midChars[i - 1])) ofSetColor(ofColor(170, 255, 170));
-    else ofSetColor(ofColor(255, 255, 255)); // default is white
-
-    ofRectRounded(i * ww / 12, wh / 2 - keyHeight / 2, 2,
-      keyWidth, keyHeight, 10, 10, 10, 10); // position and size
-    string letter(1, midChars[i - 1]); // for drawing bitmap string
-
+  else {
     ofPushStyle();
-      ofSetColor(ofColor::black);
-      ofDrawBitmapString(letter, i * ww / 12 + keyWidth / 2, wh / 2, 2);
+      ofTranslate(ww / 2, wh / 2);
+      ofRotateZ(90); // easy view
+      ofTranslate(-ww / 2, -wh / 2);
+      
+      string hardLetters = "fghj";
+      // print Guitar Hero note grid
+      for (int i = 4; i < 8; i += 1) {
+        string letter(1, hardLetters[i - 4]);
+        ofColor faded(240, 240, 240);
+
+        ofSetColor(faded);
+        if (previews.size() > 5 && hardLetters[i - 4] == previews[5]) ofSetColor(ofColor(170, 170, 255));
+        ofRectRounded(i * ww / 12, wh / 2 - 7 * keyHeight / 2 - keyHeight * .3, 2,
+            keyWidth, keyHeight, 10, 10, 10, 10);
+
+        ofSetColor(faded);
+        if (previews.size() > 4 && hardLetters[i - 4] == previews[4]) ofSetColor(ofColor(170, 170, 255));
+        ofRectRounded(i * ww / 12, wh / 2 - 5 * keyHeight / 2 - keyHeight * .2, 2,
+            keyWidth, keyHeight, 10, 10, 10, 10);
+
+        ofSetColor(faded);
+        if (previews.size() > 3 && hardLetters[i - 4] == previews[3]) ofSetColor(ofColor(170, 170, 255));
+        ofRectRounded(i * ww / 12, wh / 2 - 3 * keyHeight / 2 - keyHeight * .1, 2,
+            keyWidth, keyHeight, 10, 10, 10, 10);
+
+        ofSetColor(faded);
+        if (previews.size() > 2 && hardLetters[i - 4] == previews[2]) ofSetColor(ofColor(170, 170, 255));
+        ofRectRounded(i * ww / 12, wh / 2 - keyHeight / 2, 2,
+            keyWidth, keyHeight, 10, 10, 10, 10);
+
+        ofSetColor(faded);
+        if (previews.size() > 1 && hardLetters[i - 4] == previews[1]) ofSetColor(ofColor(170, 170, 255));
+        ofRectRounded(i * ww / 12, wh / 2 + keyHeight / 2 + keyHeight * .1, 2,
+            keyWidth, keyHeight, 10, 10, 10, 10);
+
+        ofSetColor(faded);
+        if (previews.size() > 0 && hardLetters[i - 4] == previews[0]) ofSetColor(ofColor(170, 170, 255));
+        ofRectRounded(i * ww / 12, wh / 2 + 3 * keyHeight / 2 + keyHeight * .2, 2,
+            keyWidth, keyHeight, 10, 10, 10, 10);
+
+        ofSetColor(ofColor(255, 255, 255));
+        if (highlight != -1 && hardLetters[i - 4] == highlight) ofSetColor(ofColor(125, 125, 255));
+        ofRectRounded(i * ww / 12, wh / 2 + 5 * keyHeight / 2 + keyHeight * .3, 2,
+            keyWidth, keyHeight, 10, 10, 10, 10);
+
+        ofPushStyle();
+          ofSetColor(ofColor::black);
+          ofDrawBitmapString(letter, i * ww / 12 + keyWidth / 2, wh / 2 + keyHeight * 3.3, 2);
+        ofPopStyle();
+      }
+
+    // end rotate
     ofPopStyle();
   }
+}
 
-  // print out the bottom chars
-  for (int i = 1; i < 11; i += 1) {
-    if (pressed.count(botChars[i - 1])) ofSetColor(ofColor(170, 255, 170));
-    else ofSetColor(ofColor(255, 255, 255)); // default is white
-
-    ofRectRounded(i * ww / 12 + 25, wh / 2 + keyHeight / 2 + keyHeight *.1,
-      2, keyWidth, keyHeight, 10, 10, 10, 10); // position and size
-    string letter(1, botChars[i - 1]); // for drawing bitmap string
-
-    ofPushStyle();
-      ofSetColor(ofColor::black);
-      ofDrawBitmapString(letter, i * ww / 12 + 25 + keyWidth / 2,
-        wh / 2 + keyHeight + keyHeight *.1, 2);
-    ofPopStyle();
-  }
+/**
+ * Function: windowResized
+ * -----------------------
+ * Handle window resizing.
+ */
+void ofApp::windowResized(int width, int height) {
+  // override custom window sizing
+  // ofSetWindowShape(1024, 768);
 }
