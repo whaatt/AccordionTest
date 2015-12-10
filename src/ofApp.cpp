@@ -84,7 +84,7 @@ void buildSongVector(vector<vector<Note>>& song, vector<char>& songKeys,
   if (song.size() == 0) return; // empty
   string hardKeys("fghj"); // six notes guitar hero style
   Note lastNote = *max_element(song[0].begin(), song[0].end());
-  int lastKeyIndex = 2; // corresponds to h
+  int lastKeyIndex = 3; // corresponds to j
   songKeys.push_back(hardKeys[lastKeyIndex]);
   topNotes.push_back(lastNote);
 
@@ -448,8 +448,8 @@ void ofApp::keyPressed(int key) {
   // change mode [keyboard layout schematic, e.g. inc by rows] with '
   if (key == '\'') mapper.setModeIndex(modeIndex = ++modeIndex % modes.size());
 
-  // change the selected song in directory with -
-  if (key == '-') filesIndex = ++filesIndex % filesMIDI.size();
+  // change the selected song in directory with - when not in playthrough mode
+  if (key == '-' && !playThrough) filesIndex = ++filesIndex % filesMIDI.size();
 }
 
 /**
@@ -622,7 +622,7 @@ void ofApp::drawKeys(){
       ofTranslate(ww / 2, wh / 2);
       ofRotateZ(90); // easy view
       ofTranslate(-ww / 2, -wh / 2);
-      
+
       string hardLetters = "fghj";
       // print Guitar Hero note grid
       for (int i = 4; i < 8; i += 1) {
