@@ -118,6 +118,13 @@ class ofApp : public ofBaseApp {
     bool fulscr; // fullscreen
     bool fulscrToggled;
 
+    // particle stuff
+    int nPrtcl;
+    vector< vector<float> > prtclPos;
+    vector<ofColor> prtclColor;
+
+    bool skeumorph;
+
     // whether to draw help text
     // in the barebones view
     bool keybToggled = false;
@@ -132,6 +139,22 @@ class ofApp : public ofBaseApp {
     float keybPosition;
     set<int> pressed;
     bool keybOn;
+
+    // Hell mode stuff
+    void drawLeder(float pos, float offset, float rotSpd, float fade);
+    void drawNyan(float pos, float offset, float fade);
+		bool hellMode;
+		long long unsigned int lastPress;
+		int pressCounter;
+		vector<int> pressHist;
+		vector<float> flameHeight;
+		vector<float> curFlame;
+		ofImage leder;
+		ofImage nyan;
+		vector<float> lederPos;
+		vector<float> lederOffset;
+    vector<float> lederRotspd;
+    long long unsigned int hellStart;
 
     // mouse velocity stuff
     int lastX; // defined
