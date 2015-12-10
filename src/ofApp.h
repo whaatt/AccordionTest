@@ -89,7 +89,7 @@ class ofApp : public ofBaseApp {
     int highDuration;
 
     // ignore side presses
-    int lastPressTime = 0;
+    long long lastPressTime = 0;
     int debounceTime = 35;
 
     // mapping state
@@ -104,7 +104,7 @@ class ofApp : public ofBaseApp {
     float shakeSmooth = 0.0;
     float shakeSpeed = 0.0;
     float tiltDir = 0.0;
-    int lastTime = -1;
+    long long lastTime = -1;
     int numFrames = 0;
     float tau = 250;
 
@@ -119,10 +119,11 @@ class ofApp : public ofBaseApp {
     bool fulscrToggled;
 
     // particle stuff
-    int nPrtcl;
-    vector< vector<float> > prtclPos;
+    int nPrtcl; // particle count
+    vector<vector<float>> prtclPos;
     vector<ofColor> prtclColor;
 
+    // particle or bellow
     bool skeumorph;
 
     // whether to draw help text
@@ -140,26 +141,33 @@ class ofApp : public ofBaseApp {
     set<int> pressed;
     bool keybOn;
 
-    // Hell mode stuff
+    // key press interval
+    float avgDiff;
+
+    // hell mode functions and state variables
     void drawLeder(float pos, float offset, float rotSpd, float fade);
     void drawNyan(float pos, float offset, float fade);
+
 		bool hellMode;
-		long long unsigned int lastPress;
+		long long lastPress;
 		int pressCounter;
+
 		vector<int> pressHist;
 		vector<float> flameHeight;
 		vector<float> curFlame;
+
 		ofImage leder;
 		ofImage nyan;
+
 		vector<float> lederPos;
 		vector<float> lederOffset;
     vector<float> lederRotspd;
-    long long unsigned int hellStart;
+    long long hellStart;
 
     // mouse velocity stuff
     int lastX; // defined
     int lastY; // defined
-    int lastTimeM = -1;
+    long long lastTimeM = -1;
     float xVel = 0.0;
     float yVel = 0.0;
     float xVelSm = 0.0;
@@ -167,4 +175,5 @@ class ofApp : public ofBaseApp {
     float xAcc = 0.0;
     float yAcc = 0.0;
     float vTau = 250;
+    bool bend = false;
 };

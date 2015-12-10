@@ -148,38 +148,45 @@ void ofApp::setup() {
   velocity = 0;
 
   // particle mode
-  skeumorph=true;
+  skeumorph = true;
   nPrtcl = 200;
   prtclColor.resize(nPrtcl);
   prtclPos.resize(nPrtcl);
+
+  // initialize nPrtcl particles
   for (int i = 0; i < nPrtcl; i += 1) {
     prtclPos[i].resize(2);
-    prtclPos[i][0]=(float)rand()/RAND_MAX;
-    prtclPos[i][1]=(float)rand()/RAND_MAX;
-    prtclColor[i]=ofColor(ofRandom( 0, 255 ), ofRandom( 0, 255 ), ofRandom( 0, 255 ));
+    prtclPos[i][0] = (float) rand() / RAND_MAX;
+    prtclPos[i][1] = (float) rand() / RAND_MAX;
+    prtclColor[i] = ofColor(ofRandom(0, 255),
+      ofRandom(0, 255), ofRandom(0, 255));
   }
 
   // hell mode stuff
-  hellMode=false;
+  hellMode = false;
   leder.loadImage("lederhosen.png");
   nyan.loadImage("nyan.png");
   flameHeight.resize(20);
   curFlame.resize(20);
-  for(int i=0; i<20; i++){
-      curFlame[i]=1.0;
-  }
 
-  lastPress=ofGetElapsedTimeMillis();
-  pressCounter=0;
+  // initialize flame levels
+  for (int i = 0; i < 20; i += 1)
+    curFlame[i] = 1.0;
+
+  // track press frequency for hell mode
+  lastPress = ofGetElapsedTimeMillis();
+  pressCounter = 0;
   pressHist.resize(10);
 
   lederPos.resize(10);
   lederOffset.resize(10);
   lederRotspd.resize(10);
-  for(int i=0; i<10; i+=1){
-    lederPos[i]=wh*(float)rand()/RAND_MAX;
-    lederOffset[i]=ww*(float)rand()/RAND_MAX;
-    lederRotspd[i]=2*(float)rand()/RAND_MAX-1;
+
+  // initialize lederdudes
+  for (int i = 0; i < 10; i += 1) {
+    lederPos[i] = wh * (float) rand() / RAND_MAX;
+    lederOffset[i] = ww * (float) rand() / RAND_MAX;
+    lederRotspd[i] = 2 * (float) rand() / RAND_MAX - 1;
   }
 
   // onscreen keys stuff
@@ -211,7 +218,7 @@ void ofApp::update() {
     }
 
     // get the current time in ms
-    int now = ofGetElapsedTimeMillis();
+    long long now = ofGetElapsedTimeMillis();
     if (lastTimeM == -1) lastTimeM = now;
 
     float dT = now - lastTimeM;
@@ -237,8 +244,9 @@ void ofApp::update() {
     xVelSm = xVelSmNew;
     yVelSm = yVelSmNew;
 
-    // TODO: decide if we want this
-    // synth -> pitchBend(1, -yVelSm);
+    if (bend) // pitch bend with touchpad
+      synth -> pitchBend(1, -yVelSm < -1.0 
+        ? -1.0 : (-yVelSm > 1.0 ? 1.0 : -yVelSm));
 
     // below this line is
     // smoothing shit for
@@ -306,6 +314,9 @@ void ofApp::update() {
   if (tiltDir > 0) position = position + (1.0 - position) * tiltSmooth * .0025;
   else position = position - position * tiltSmooth * .005;
   compress = position * 0.25 + 0.25;
+
+  // ease hell mode when no presses
+  avgDiff += (250 - avgDiff) * 0.04;
 }
 
 /**
@@ -318,10 +329,11 @@ void ofApp::draw() {
   wh = ofGetWindowHeight();
   ww = ofGetWindowWidth();
 
-  if(skeumorph){
+  // bellows mode
+  if (skeumorph) {
     // draw baffles
     ofPushMatrix();
-      ofBackground(190,30,45);
+      ofBackground(190, 30, 45);
       for (int i = 0; i < 10; i += 1) {
         ofPushMatrix();
           // translate based on compression factor
@@ -333,143 +345,33 @@ void ofApp::draw() {
       // translate all baffles
       ofTranslate(0, wh, 0);
     ofPopMatrix();
-  } else {
-  // draw particles
+  }
+
+  else {
+    // draw particles
     ofPushMatrix();
     ofPushStyle();
-      ofBackground(0,0,0);
+
+      ofBackground(0, 0, 0);
+      // update particle positions
       for (int i = 0; i < nPrtcl; i += 1) {
-        ofSetColor(prtclColor[i]);
-        ofRect(prtclPos[i][0]*ww,prtclPos[i][1]*wh+i/30*compress*wh/4-30,5,5);
+        ofSetColor(prtclColor[i]); // randomized before
+        ofRect(prtclPos[i][0] * ww, prtclPos[i][1] * wh + i / 30 * compress * wh / 4 - 30, 5, 5);
       }
+
     ofPopStyle();
     ofPopMatrix();
   }
 
-  // Hell mode things
-  int frame = ofGetFrameNum();
-  if(hellMode){
-    float hellFade;
-    if(ofGetElapsedTimeMillis()-hellStart<3000){
-      hellFade = (ofGetElapsedTimeMillis()-hellStart)/3000.0*255;
-    } else if(ofGetElapsedTimeMillis()-hellStart>12000) {
-      hellFade = -(ofGetElapsedTimeMillis()-hellStart-15000)/3000.0*255;
-    } else if(ofGetElapsedTimeMillis()-hellStart>15000) {
-      hellMode=false;
-    } else {
-      hellFade = 255;
-    }
-    ofEnableAlphaBlending();
-    // ofLog(OF_LOG_NOTICE, "hellfade: " + ofToString(hellFade));
-
-    if(skeumorph){
-
-      for(int i=0; i<10; i+=1){
-        drawLeder(lederPos[i],lederOffset[i],lederRotspd[i], hellFade);
-      }
-
-      ofPushMatrix();
-      ofPushStyle();
-        ofTranslate(ww,0);
-
-        ofBeginShape();
-          ofSetColor(255,0,0,hellFade);
-          ofVertex(0,0);
-          for(int i=0; i<20; i++){
-            if(frame%20==0) {
-              flameHeight[i]=(float)std::rand()/RAND_MAX;
-            }
-            curFlame[i]=curFlame[i]+(flameHeight[i]-curFlame[i])*.09;
-            ofVertex(-ww*curFlame[i],i*wh/20+ww/40);
-          }
-          ofVertex(0,wh);
-        ofEndShape(false);
-
-        ofBeginShape();
-          ofSetColor(255,255,0,hellFade);
-          ofVertex(0,0);
-          for(int i=0; i<20; i++){
-            ofVertex(-ww*curFlame[i]*.5,i*wh/20+ww/40);
-          }
-          ofVertex(0,wh);
-        ofEndShape(false);
-      ofPopMatrix();
-      ofPopStyle();
-    } else {
-
-      for(int i=0; i<10; i+=1){
-        drawNyan(lederPos[i],lederOffset[i], hellFade);
-      }
-
-      ofPushMatrix();
-      ofPushStyle();
-        ofTranslate(ww,0);
-
-        ofBeginShape();
-          ofSetColor(255,0,0,hellFade);
-          ofVertex(0,0);
-          for(int i=0; i<20; i++){
-            if(frame%20==0) {
-              flameHeight[i]=(float)std::rand()/RAND_MAX;
-            }
-            curFlame[i]=curFlame[i]+(flameHeight[i]-curFlame[i])*.09;
-            ofVertex(-ww*curFlame[i]*.6,i*wh/20+ww/40);
-          }
-          ofVertex(0,wh);
-        ofEndShape(false);
-
-        ofBeginShape();
-          ofSetColor(255,255,0,hellFade);
-          ofVertex(0,0);
-          for(int i=0; i<20; i++){
-            ofVertex(-ww*curFlame[i]*.5,i*wh/20+ww/40);
-          }
-          ofVertex(0,wh);
-        ofEndShape(false);
-
-        ofBeginShape();
-          ofSetColor(0,255,0,hellFade);
-          ofVertex(0,0);
-          for(int i=0; i<20; i++){
-            ofVertex(-ww*curFlame[i]*.4,i*wh/20+ww/40);
-          }
-          ofVertex(0,wh);
-        ofEndShape(false);
-
-        ofBeginShape();
-          ofSetColor(0,0,255,hellFade);
-          ofVertex(0,0);
-          for(int i=0; i<20; i++){
-            ofVertex(-ww*curFlame[i]*.3,i*wh/20+ww/40);
-          }
-          ofVertex(0,wh);
-        ofEndShape(false);
-
-        ofBeginShape();
-          ofSetColor(255,0,255,hellFade);
-          ofVertex(0,0);
-          for(int i=0; i<20; i++){
-            ofVertex(-ww*curFlame[i]*.2,i*wh/20+ww/40);
-          }
-          ofVertex(0,wh);
-        ofEndShape(false);
-      ofPopMatrix();
-      ofPopStyle();
-    }
-    ofDisableAlphaBlending();
-  }
-
-  if (!keybToggled)
-    ofDrawBitmapString("Welcome to Laptop Accordion 0.0.1!\n" + // welcome
-      string("Toggle Keyboard With Backslash (\\)"), ww / 2 - 130, 20, 2);
-
+  // keyboard
   ofPushMatrix();
     // draw keys with alpha
     ofTranslate(keybPosition, 0);
 
     ofPushStyle();
       ofEnableAlphaBlending();
-      ofSetColor(255, 255, 255, 180);
+      int alpha = skeumorph ? 180 : 0;
+      ofSetColor(255, 255, 255, alpha);
       ofRect(0, 0, ww, wh);
       ofDisableAlphaBlending();
     ofPopStyle();
@@ -477,7 +379,125 @@ void ofApp::draw() {
     drawKeys();
   ofPopMatrix();
 
-  // ofDrawBitmapString(ofToString(ofGetFrameRate())+"fps", 10, 15);
+  // hell stuff
+  if (hellMode) {
+    float hellFade;
+    if (avgDiff > 250) hellFade = 0;
+    //else if (avgDiff < 50) hellFade = 255;
+    else hellFade = (float) (250 - avgDiff) / 250.0 * 255;
+    ofEnableAlphaBlending();
+
+    // bellows mode
+    if (skeumorph) {
+      for (int i = 0; i < 10; i += 1) // draw updated lederdudes
+        drawLeder(lederPos[i], lederOffset[i], lederRotspd[i], hellFade);
+
+      ofPushMatrix();
+      ofPushStyle();
+        ofTranslate(ww,0);
+
+        ofBeginShape();
+          ofSetColor(255, 0, 0, hellFade);
+          ofVertex(0,0);
+
+          // update flame heights
+          for (int i = 0; i < 20; i += 1) {
+            if (ofGetElapsedTimeMillis() % 3 == 0)
+              flameHeight[i] = (float) rand() / RAND_MAX;
+            curFlame[i] = curFlame[i] + (flameHeight[i] - curFlame[i]) * .09;
+            ofVertex(-ww * curFlame[i], i * wh / 20 + ww / 40);
+          }
+
+          ofVertex(0,wh);
+        ofEndShape(false);
+
+        ofBeginShape();
+          ofSetColor(255, 255, 0, hellFade);
+          ofVertex(0,0);
+
+          // inner flame I think
+          for(int i = 0; i < 20; i += 1)
+            ofVertex(-ww*curFlame[i]*.5,i*wh/20+ww/40);
+
+          ofVertex(0,wh);
+        ofEndShape(false);
+      ofPopMatrix();
+      ofPopStyle();
+    }
+
+    else { // particles
+      for (int i = 0; i < 10; i += 1) // draw updated nyan
+        drawNyan(lederPos[i], lederOffset[i], hellFade);
+
+      // draw all rainbows
+      ofPushMatrix();
+      ofPushStyle();
+        ofTranslate(ww,0);
+
+        ofBeginShape();
+          ofSetColor(255, 0, 0, hellFade);
+          ofVertex(0, 0);
+
+          for(int i = 0; i < 20; i += 1) {
+            if(ofGetElapsedTimeMillis() % 3 == 0)
+              flameHeight[i] = (float) rand() / RAND_MAX;
+            curFlame[i] = curFlame[i] + (flameHeight[i] - curFlame[i]) *.09;
+            ofVertex(-ww * curFlame[i] * .6, i * wh / 20 + ww / 40);
+          }
+
+          ofVertex(0,wh);
+        ofEndShape(false);
+
+        ofBeginShape();
+          ofSetColor(255,255,0,hellFade);
+          ofVertex(0,0);
+
+          for (int i = 0; i < 20; i += 1)
+            ofVertex(-ww * curFlame[i] * .5, i * wh / 20 + ww / 40);
+
+          ofVertex(0, wh);
+        ofEndShape(false);
+
+        ofBeginShape();
+          ofSetColor(0, 255, 0, hellFade);
+          ofVertex(0, 0);
+
+          for(int i = 0; i < 20; i += 1)
+            ofVertex(-ww * curFlame[i] * .4, i * wh / 20 + ww / 40);
+
+          ofVertex(0,wh);
+        ofEndShape(false);
+
+        ofBeginShape();
+          ofSetColor(0, 0, 255, hellFade);
+          ofVertex(0, 0);
+
+          for(int i = 0; i < 20; i += 1)
+            ofVertex(-ww * curFlame[i] * .3, i * wh / 20 + ww / 40);
+
+          ofVertex(0,wh);
+        ofEndShape(false);
+
+        ofBeginShape();
+          ofSetColor(255, 0, 255, hellFade);
+          ofVertex(0,0);
+
+          for(int i = 0; i < 20; i += 1)
+            ofVertex(-ww * curFlame[i] * .2, i * wh / 20 + ww / 40);
+
+          ofVertex(0,wh);
+        ofEndShape(false);
+      ofPopMatrix();
+      ofPopStyle();
+    }
+  }
+
+  if (!keybToggled)
+    ofDrawBitmapString("Welcome to Laptop Accordion 0.0.1!\n" + // welcome
+      string("Toggle Keyboard With Backslash (\\)"), ww / 2 - 130, 20, 2);
+
+  // for good measure
+  ofDisableAlphaBlending();
 }
 
 /**
@@ -511,7 +531,7 @@ void ofApp::keyPressed(int key) {
       if (keyPosMap.find(key) != keyPosMap.end())
         return; // already handling this key press
 
-      int now = ofGetElapsedTimeMillis();
+      long long now = ofGetElapsedTimeMillis();
       if (now - lastPressTime < debounceTime)
         return; // likely an accidental key mash
 
@@ -547,6 +567,25 @@ void ofApp::keyPressed(int key) {
     ofColor random(red, green, blue);
     // ofColor green(170, 255, 170);
     color[key] = random;
+
+    // hell mode activation by key frequency
+    long long thisPress = ofGetElapsedTimeMillis();
+    int pressDiff = thisPress - lastPress;
+    lastPress=thisPress;
+    pressCounter++;
+
+    // buffer of the last ten diff values
+    pressHist[pressCounter % 10] = pressDiff;
+
+    // find avg diff
+    int diffSum = 0;
+    for(int i = 0; i < 10; i += 1)
+      diffSum = diffSum + pressHist[i];
+    avgDiff = diffSum / 10;
+
+    // trigger hell mode < 250
+    if (avgDiff < 250) hellMode = true;
+    else hellMode = false;
   }
 
   // press backslash for
@@ -616,26 +655,12 @@ void ofApp::keyPressed(int key) {
   // change the selected song in directory with - when not in playthrough mode
   if (key == '-' && !playThrough) filesIndex = ++filesIndex % filesMIDI.size();
 
-  // 9 for skeumorphism
+  // press 9 for skeumorphism
   if (key == '9') skeumorph =! skeumorph;
 
-  // hell mode activation
-  long long unsigned int thisPress=ofGetElapsedTimeMillis();
-  int pressDiff=thisPress-lastPress;
-  lastPress=thisPress;
-  pressCounter++;
-  pressHist[pressCounter%10]=pressDiff;
-  int diffSum=0;
-  for(int i=0; i<10; i++){
-    diffSum=diffSum+pressHist[i];
-  }
-  float avgDiff=diffSum/10;
-  if(avgDiff<100){
-    hellMode=true;
-    hellStart=ofGetElapsedTimeMillis();
-  }
-
-  // ofLog(OF_LOG_NOTICE, "avgdiff: " + ofToString(avgDiff));
+  // press 8 for toggling pitch bend
+  if (key == '8') bend = !bend;
+  if (!bend) synth -> pitchBend(1, 0);
 }
 
 /**
@@ -691,18 +716,15 @@ void ofApp::keyReleased(int key) {
  * --------------------
  * Draws a single lederhosen dude.
  */
-void ofApp::drawLeder(float pos, float offset, float rotSpd, float fade){
-
-  int frame = ofGetFrameNum();
-
+void ofApp::drawLeder(float pos, float offset, float rotSpd, float fade) {
   ofPushStyle();
-  ofSetColor(255,255,255, fade);
+    ofSetColor(255, 255, 255, fade);
 
-  ofPushMatrix();
-    ofTranslate(fmod(frame*6+offset,ww+leder.getWidth())-leder.getWidth(),pos);
-    ofRotate(fmod(rotSpd*frame,360));
-    leder.draw(-leder.getWidth()/2,-leder.getHeight()/2);
-  ofPopMatrix();
+    ofPushMatrix();
+      ofTranslate(fmod(ofGetElapsedTimeMillis() / 2 + offset, ww + leder.getWidth()) - leder.getWidth(), pos);
+      ofRotate(fmod(rotSpd * ofGetElapsedTimeMillis() / 12, 360));
+      leder.draw(-leder.getWidth() / 2, -leder.getHeight() / 2);
+    ofPopMatrix();
   ofPopStyle();
 }
 
@@ -712,16 +734,13 @@ void ofApp::drawLeder(float pos, float offset, float rotSpd, float fade){
  * Draws a single nyan cat.
  */
 void ofApp::drawNyan(float pos, float offset, float fade){
-
-  int frame = ofGetFrameNum();
-
   ofPushStyle();
-  ofSetColor(255,255,255, fade);
+    ofSetColor(255, 255, 255, fade);
 
-  ofPushMatrix();
-    ofTranslate(fmod(frame*6+offset,ww+nyan.getWidth())-nyan.getWidth(),pos);
-    nyan.draw(-nyan.getWidth()/2,-nyan.getHeight()/2);
-  ofPopMatrix();
+    ofPushMatrix();
+      ofTranslate(fmod(ofGetElapsedTimeMillis() / 2 + offset, ww + nyan.getWidth()) - nyan.getWidth(), pos);
+      nyan.draw(-nyan.getWidth() / 2, -nyan.getHeight() / 2);
+    ofPopMatrix();
   ofPopStyle();
 }
 
@@ -782,10 +801,12 @@ void ofApp::drawKeys(){
 
   ofSetColor(ofColor(0, 0, 255));
   ofDrawBitmapString("Toggle Keyboard With Backslash (\\)\n" +
+                     string("Toggle Graphical Style With (9)\n") +
                      string("Toggle Fullscreen With Tick (`)\n\n") +
                      string("Current Scale: ") + scales[scaleIndex] + " (])\n" +
                      string("Current Key: ") + keys[keyIndex] + " ([)\n" +
-                     string("Current Mode: ") + modes[modeIndex] + " (')\n\n" +
+                     string("Current Mode: ") + modes[modeIndex] + " (')\n" +
+                     string("Pitch Bend: ") + (bend ? string("Enabled") : string("Disabled")) + " (8)\n\n" +
                      string("Selected Song: ") + filesMIDI[filesIndex].substr(10, filesMIDI[filesIndex].size() - 14) +
                      string(" (-)\nPlay Through Mode: ") + (playThrough ? string("Running") : string("Stopped")) +
                      string(" (=)\nHard Mode: ") + (hardMode ? string("On") : string("Off")) + " (0)", 10, 20, 2);
@@ -909,4 +930,12 @@ void ofApp::drawKeys(){
 void ofApp::windowResized(int width, int height) {
   // override custom window sizing
   // ofSetWindowShape(1024, 768);
+  wh = height;
+  ww = width;
+
+  // rescale lederdudes
+  for(int i = 0; i < 10; i += 1) {
+    lederPos[i] = wh * (float) rand() / RAND_MAX;
+    lederOffset[i] = ww * (float) rand() / RAND_MAX;
+  }
 }
