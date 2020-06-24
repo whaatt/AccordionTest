@@ -1,3 +1,5 @@
+**NOTE** (June 2020): This repository has [moved](https://github.com/whaatt/LaptopAccordion).
+
 AccordionTest
 =============
 Laptop Accordion Support Code
